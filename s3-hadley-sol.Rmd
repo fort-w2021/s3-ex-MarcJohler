@@ -1,0 +1,176 @@
+---
+title: "s3-hadley-sol"
+author: "Marc Johler"
+date: "20 1 2021"
+output: html_document
+---
+- Was tut die `as.data.frame.data.frame()` Methode? Warum ist das verwirrend? Wie können Sie derartige Verwirrung in Ihrem eigenen Code vermeiden?
+
+ANTWORT:
+Funktion transformiert Objekt der Klasse data.frame zu einem data.frame (also nichts)
+Schreibweise mit Punkten bei Methode und Klasse macht den Funktionsaufruf schwer leserlich, besser:
+
+as_data_frame.data_frame() 
+oder
+as_dataframe.dataframe()
+
+- Beschreiben/erklären Sie das Verhalten dieses Codes:
+```r
+set.seed(1014)
+some_days <- as.Date("2019-11-24") + sample(10, 5)
+mean(some_days)
+# [1] "2019-11-30"
+mean(unclass(some_days))
+# [1] 18230.4
+```
+ANTWORT:
+mit sloop::s3_get_method(mean.Date) kann überprüft werden, was mean mit Objekten 
+der Klasse "Date" macht. 
+
+```r
+sloop::s3_get_method(mean.Date)
+# function (x, ...) 
+# .Date(mean(unclass(x), ...))
+# <bytecode: 0x0000018e65e847c0>
+# <environment: namespace:base>
+```
+unclass(x) gibt für class(x) = "Date" die Tage nach seinem "origin" (in R ist Default "1970-01-01") zurück. 
+In beiden Fällen wird über diese numeric values gemittelt. 
+Man kann letzteren Aufruf zum selben Ergebnis wie bei ersterem bringen, in dem wieder zu einem "Date" Objekt zurück transformiert wird. Jedoch muss der "origin" dann explizit angegeben werden. 
+
+```r
+as.Date(mean(unclass(some_days)), origin = "1970-01-01")
+# [1] "2019-11-30"
+```
+
+- Welche Klasse hat `x` im folgenden Code? Auf welchem *base type* basiert diese Klasse? Welche Attribute nutzt sie und wie sind die mathematischen Eigenschaften von Verteilungsfunktionen hier konkret implementiert? 
+```r
+x <- ecdf(rpois(100, 10))
+x
+# Empirical CDF 
+# Call: ecdf(rpois(100, 10))
+#  x[1:15] =      1,      4,      5,  ...,     16,     17
+```
+
+ANTWORT:
+
+```r
+typeof(x)
+# [1] "closure"
+attributes(x)
+# $class
+# [1] "ecdf"     "stepfun"  "function"
+#
+# $call
+# ecdf(rpois(100, 10))
+```
+*base type* der Klasse "ecdf" ist closure. ecdf nutzt die Attribute "class" und "call"
+
+```r
+# get the methods for all three classes of x
+methods(class = "ecdf")
+# [1] plot     print    quantile summary 
+# see '?methods' for accessing help and source code
+methods(class = "stepfun")
+# [1] knots   lines   plot    print   summary
+# see '?methods' for accessing help and source code
+methods(class = "function")
+# [1] as.list  coerce   coerce<- head     plot     print    tail    
+# see '?methods' for accessing help and source code
+```
+
+Die mathematischen Eigenschaften von Verteilungsfunktionen sind als Methoden "quantile" und "summary" implementiert:
+
+```
+# Empirische Quantile der Poisson-Stichprobe die für x verwendet wurde
+summary(x)
+
+# Theoretische Quantile der Poisson-Verteilung die für x verwendet wurde
+quantile(x)
+```
+
+- Schreiben Sie einen neuen low-level Konstruktor für `data.frame`-Objekte (ohne die Funktionen `as.data.frame()` oder `data.frame()` zu benutzen, selbstverständlich). Machen Sie sich zunächst klar: Auf welchem *base type* basiert `data.frame`? Welche Attribute nutzt `data.frame`? Welche Restriktionen gelten für die verschiedenen Einträge und Attribute?  
+    *Hinweis*: Sehen Sie sich dafür zunächst mal so etwas wie `str(unclass(<irgend ein data.frame>))` an.
+
+ANTWORT:
+    
+``` 
+test_data <- data.frame(diag(1, 4, 4))
+str(unclass(test_data))
+# List of 4
+# $ X1: num [1:4] 1 0 0 0
+# $ X2: num [1:4] 0 1 0 0
+# $ X3: num [1:4] 0 0 1 0
+# $ X4: num [1:4] 0 0 0 1
+# - attr(*, "row.names")= int [1:4] 1 2 3 4
+
+attributes(test_data)
+# $names
+# [1] "X1" "X2" "X3" "X4"
+#
+# $class
+# [1] "data.frame"
+# 
+# $row.names
+# [1] 1 2 3 4
+```
+
+*base type* eines `data.frame` ist `list`. Die Attribute sind "names", "class" und "row.names".
+Anforderungen an die Elemente und Attribute:
+- Die Elemente der grundlegenden Liste müssen atomic vectors derselben Länge sein.
+- Das Attribut "names" eines data.frames ist identisch zur generischen names()-Funktion angewendet auf die grundlegende Liste und ist ein string-vector
+- class muss `data.frame` sein
+- Das Attribut "row.names" ist ein string-Vector 
+
+Low-level constructor:
+```
+new_dataframe <- function(x) {
+  stopifnot(is.list(x))
+  structure(x,
+    class = "dataframe",
+    names = names(x),
+    row_names = as.character(seq(1, length(x)))
+    )
+}
+```
+Damit das funktioniert ist es notwendig, dass x eine benamte Liste mit gleich-langen atomic Listenelementen ist. 
+Zur Vervollständigung würde noch eine helper-Funktion benötigt werden, die zunächst den Input validiert und anschließend homogenisiert (z.B. Matrix zu Liste transformieren oder unbenamte Listen mit Default-names versehen).
+
+
+- Kategorisieren Sie die Klassen der Rückgabe-Objekte von `lm(), factor(), table(), as.Date(), as.POSIXct(), ecdf(), ordered(), I()` in die Klassentypen *vector class*, *record style class*, *scalar class* die in *Advanced R* beschrieben  werden.
+
+ANTWORT:
+
+vector class:
+- factor()
+- as.Date()
+- ordered()
+- I()
+- table()
+- as.POSIXct
+
+record style class:
+- keine
+
+scalar class:
+- lm()
+- ecdf()
+
+
+- Wie sähe ein Konstruktor `new_lm` für Objekte der Klasse `lm` aus? Warum wäre ein solcher Konstruktor vermutlich nicht besonders nützlich? 
+
+ANTWORT:
+
+Der Konstruktor würde alle Informationen eines Modells übergeben bekommen und diese dann in eine Liste packen und wieder ausgeben. Die konkreten Berechnungen müssten aber ohnehin in der Funktion erfolgen, die die Informationen zum Modell berechnet. Die Strukturierung dieser Information kann dann einfach über das sukzessive Befüllen einer Liste erfolgen, ohne dass separat ein Konstrukor aufgerufen wird. 
+
+- Lesen Sie den Quellcode für `t()` und `t.test()`. Ist `t.test()` eine generische S3 Funktion oder eine S3 Methode? Was passiert **im Detail** wenn sie `t()` auf ein S3-Objekt mit Klasse `test` anwenden (s.u.)? Warum?
+```r
+x <- structure(1:10, class = "test")
+t(x)
+```
+
+ANTWORT:
+
+t.test() ist eine generische Funktion die einen T-test für ein Objekt der Klasse `test` durchführt (schlechter Funktionsname)
+t() angewendet auf ein Objekt der Klasse `test` ruft mittels UseMethod() die entsprechende Methode auf. Da für `test` Objekte keine eigens definierte Methode exisitiert wird stattdessen t.default() auf das Objekt ausgeführt. 
+
